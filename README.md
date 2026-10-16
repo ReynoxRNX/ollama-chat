@@ -1,75 +1,73 @@
-# Chat Ollama
+# Ollama Chat
 
-Une petite application de bureau pour discuter avec des modèles d'IA qui tournent **en local** grâce à [Ollama](https://ollama.com). Pas de compte, pas de cloud, et **aucune dépendance Python à installer** (Tkinter + bibliothèque standard).
+A small desktop app for chatting with AI models running **locally** through [Ollama](https://ollama.com). No account, no cloud, and **no Python dependencies to install** (just Tkinter and the standard library).
 
-*English: a tiny, dependency-free desktop chat UI (Tkinter) for local models served by Ollama. See the usage steps below, they are language-independent.*
+## Features
 
-## Fonctionnalités
+- Replies stream in as they are generated, with a **Stop** button
+- Pick any model installed in Ollama, adjustable temperature
+- Optional system prompt (e.g. "Always answer in French")
+- Shows the "thinking" of reasoning models (Qwen3, DeepSeek R1, ...)
+- Generation speed (tokens/s) shown after each reply
+- Export the conversation to Markdown
+- Works on Windows, macOS and Linux
 
-- Réponses affichées au fil de l'eau (streaming), avec bouton **Arrêter**
-- Choix du modèle parmi ceux installés dans Ollama, température réglable
-- Consigne système optionnelle (ex. « Réponds toujours en français »)
-- Affichage de la « réflexion » des modèles de raisonnement (Qwen3, DeepSeek R1…)
-- Vitesse de génération (tokens/s) après chaque réponse
-- Export de la conversation en Markdown
-- Fonctionne sur Windows, macOS et Linux
+## Requirements
 
-## Prérequis
-
-1. **[Ollama](https://ollama.com/download)** installé et lancé.
-2. **Python 3.8 ou plus récent** avec Tkinter :
-   - Windows / macOS : l'installeur de [python.org](https://www.python.org/downloads/) l'inclut.
-   - Linux (Debian/Ubuntu) : `sudo apt install python3-tk`
-3. Au moins un modèle téléchargé, par exemple :
+1. **[Ollama](https://ollama.com/download)** installed and running.
+2. **Python 3.8 or newer** with Tkinter:
+   - Windows / macOS: the installer from [python.org](https://www.python.org/downloads/) includes it.
+   - Linux (Debian/Ubuntu): `sudo apt install python3-tk`
+3. At least one downloaded model, for example:
 
    ```bash
    ollama pull qwen3:8b
    ```
 
-   Choisissez un modèle adapté à votre mémoire : un fichier de modèle doit tenir dans votre RAM / VRAM avec de la marge.
+   Pick a model that fits your hardware: the model file should fit in your RAM / VRAM with some headroom.
 
-## Lancer l'application
+## Run it
 
 ```bash
 git clone https://github.com/ReynoxRNX/ollama-chat.git
 cd ollama-chat
-python ollama_chat.py        # ou python3 sous macOS / Linux
+python ollama_chat.py        # or python3 on macOS / Linux
 ```
 
-**Dans VS Code** : ouvrez le dossier (`Fichier > Ouvrir le dossier…`), ouvrez `ollama_chat.py`, puis cliquez sur le bouton ▶ en haut à droite (ou `F5`). L'extension Python de Microsoft est conseillée.
+**In VS Code**: open the folder (`File > Open Folder...`), open `ollama_chat.py`, then click the ▶ button at the top right (or press `F5`). The Microsoft Python extension is recommended.
 
-Utilisation : choisissez un modèle, écrivez votre message, `Entrée` pour envoyer, `Maj+Entrée` pour un saut de ligne, `Échap` pour arrêter une réponse.
+Usage: choose a model, type your message, press `Enter` to send, `Shift+Enter` for a new line, and `Esc` to stop a reply.
 
 ## Configuration
 
-Par défaut l'application contacte `http://localhost:11434`. Pour utiliser un autre serveur Ollama (autre machine du réseau, port différent), définissez la variable d'environnement `OLLAMA_HOST` avant de lancer :
+By default the app talks to `http://localhost:11434`. To use another Ollama server (another machine on your network, a different port), set the `OLLAMA_HOST` environment variable before launching:
 
 ```bash
 OLLAMA_HOST=192.168.1.20:11434 python ollama_chat.py          # macOS / Linux
 $env:OLLAMA_HOST="192.168.1.20:11434"; python ollama_chat.py   # PowerShell
 ```
 
-## Dépannage
+## Troubleshooting
 
-| Message | Cause probable |
+| Message | Likely cause |
 | --- | --- |
-| « Impossible de joindre Ollama… » | Ollama n'est pas lancé : ouvrez l'application Ollama ou tapez `ollama serve`, puis cliquez sur *Actualiser*. |
-| « Aucun modèle installé » | Téléchargez-en un avec `ollama pull <nom>`. |
-| `ModuleNotFoundError: tkinter` | Installez Tkinter (voir Prérequis). |
-| Réponses très lentes | Modèle trop gros pour votre machine : essayez-en un plus petit. |
+| "Could not reach Ollama..." | Ollama is not running: open the Ollama app or run `ollama serve`, then click *Refresh*. |
+| "No model installed" | Download one with `ollama pull <name>`. |
+| `ModuleNotFoundError: tkinter` | Install Tkinter (see Requirements). |
+| Very slow replies | The model is too big for your machine: try a smaller one. |
 
-## Limites connues
+## Known limitations
 
-- Le texte est affiché brut : pas de rendu Markdown (titres, gras, coloration du code).
-- Texte uniquement : pas d'envoi d'images ni de fichiers.
-- Ollama tronque l'historique au-delà de la taille de contexte du modèle ; pour les très longues conversations, démarrez-en une nouvelle.
+- Text is shown as plain text: no Markdown rendering (headings, bold, code highlighting).
+- Text only: no image or file attachments.
+- Ollama truncates the history beyond the model's context window; for very long conversations, start a new one.
 
-## Structure du projet
+## Project layout
 
 ```
-ollama_chat.py      interface Tkinter
-ollama_client.py    client HTTP pour l'API d'Ollama (testable sans interface)
-tests/              tests unitaires (faux serveur Ollama, aucun modèle requis)
+ollama_chat.py      Tkinter interface
+ollama_client.py    HTTP client for the Ollama API (testable without the UI)
+tests/              unit tests (fake Ollama server, no model required)
 ```
 
 ## Tests
@@ -79,10 +77,10 @@ python -m unittest discover -s tests -v
 python -m doctest ollama_client.py
 ```
 
-## Contribuer
+## Contributing
 
-Les issues et pull requests sont les bienvenues. Merci de lancer les tests avant de proposer une modification.
+Issues and pull requests are welcome. Please run the tests before submitting a change.
 
-## Licence
+## License
 
 [MIT](LICENSE)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Chat local avec Ollama : interface Tkinter, aucune dépendance externe.
+"""Local chat with Ollama: a Tkinter interface with no external dependencies.
 
-Lancement :  python ollama_chat.py
+Run it with:  python ollama_chat.py
 """
 
 import queue
@@ -14,11 +14,11 @@ from tkinter import filedialog, messagebox, ttk
 
 from ollama_client import OllamaClient, OllamaError
 
-APP_TITLE = "Chat Ollama"
+APP_TITLE = "Ollama Chat"
 POLL_MS = 30
-MODELS_EVENT = "models"  # identifiant des événements « liste des modèles »
+MODELS_EVENT = "models"  # identifier of "model list" events
 
-# Couleurs fixes (fond clair) pour rester lisible quel que soit le thème du système.
+# Fixed colors (light background) so the text stays readable with any system theme.
 BG = "#ffffff"
 FG = "#1f2328"
 USER_COLOR = "#0b5cad"
@@ -32,16 +32,16 @@ class ChatApp:
         self.root = root
         self.client = OllamaClient()
 
-        self.history = []  # messages {"role", "content"} envoyés à Ollama
-        self.events = queue.Queue()  # worker -> interface
-        self.active_stream = None  # identifiant de la génération en cours
+        self.history = []  # {"role", "content"} messages sent to Ollama
+        self.events = queue.Queue()  # worker thread -> interface
+        self.active_stream = None  # id of the generation in progress
         self.stream_counter = 0
         self.cancel_event = None
 
-        self.reply_parts = []  # morceaux de la réponse en cours
-        self.phase = None  # None, "thinking" ou "content"
+        self.reply_parts = []  # chunks of the reply being generated
+        self.phase = None  # None, "thinking" or "content"
         self.last_stats = None
-        self.pending_text = ""  # dernier message envoyé (pour le remettre en cas d'échec)
+        self.pending_text = ""  # last message sent (restored if the request fails)
 
         root.title(APP_TITLE)
         root.geometry("920x720")
@@ -69,36 +69,36 @@ class ChatApp:
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(2, weight=1)
 
-        # Ligne 1 : modèle, température, actions
+        # Row 1: model, temperature, actions
         bar = ttk.Frame(outer)
         bar.grid(row=0, column=0, sticky="ew")
-        ttk.Label(bar, text="Modèle").pack(side="left")
+        ttk.Label(bar, text="Model").pack(side="left")
         self.model_var = tk.StringVar()
         self.model_box = ttk.Combobox(bar, textvariable=self.model_var, state="readonly", width=30)
         self.model_box.pack(side="left", padx=(6, 4))
-        ttk.Button(bar, text="Actualiser", command=self.refresh_models).pack(side="left")
+        ttk.Button(bar, text="Refresh", command=self.refresh_models).pack(side="left")
 
-        ttk.Label(bar, text="Température").pack(side="left", padx=(16, 4))
+        ttk.Label(bar, text="Temperature").pack(side="left", padx=(16, 4))
         self.temp_var = tk.StringVar(value="0.7")
         self.temp_box = ttk.Spinbox(
             bar, from_=0.0, to=2.0, increment=0.1, width=5, format="%.1f", textvariable=self.temp_var
         )
         self.temp_box.pack(side="left")
 
-        ttk.Button(bar, text="Enregistrer…", command=self.save_conversation).pack(side="right")
-        ttk.Button(bar, text="Nouvelle conversation", command=self.new_conversation).pack(
+        ttk.Button(bar, text="Save…", command=self.save_conversation).pack(side="right")
+        ttk.Button(bar, text="New conversation", command=self.new_conversation).pack(
             side="right", padx=(0, 6)
         )
 
-        # Ligne 2 : consigne système
+        # Row 2: system prompt
         sys_row = ttk.Frame(outer)
         sys_row.grid(row=1, column=0, sticky="ew", pady=(8, 8))
         sys_row.columnconfigure(1, weight=1)
-        ttk.Label(sys_row, text="Consigne système").grid(row=0, column=0, padx=(0, 6))
+        ttk.Label(sys_row, text="System prompt").grid(row=0, column=0, padx=(0, 6))
         self.system_var = tk.StringVar()
         ttk.Entry(sys_row, textvariable=self.system_var).grid(row=0, column=1, sticky="ew")
 
-        # Zone de conversation
+        # Conversation area
         chat_frame = ttk.Frame(outer)
         chat_frame.grid(row=2, column=0, sticky="nsew")
         chat_frame.columnconfigure(0, weight=1)
@@ -119,7 +119,7 @@ class ChatApp:
         self.chat.tag_configure("meta", foreground=MUTED, font=self.font_small)
         self.chat.tag_configure("error", foreground=ERROR)
 
-        # Zone de saisie
+        # Input area
         entry_row = ttk.Frame(outer)
         entry_row.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         entry_row.columnconfigure(0, weight=1)
@@ -129,29 +129,28 @@ class ChatApp:
             highlightbackground="#d0d7de", highlightcolor=USER_COLOR,
         )
         self.input.grid(row=0, column=0, sticky="ew")
-        self.send_button = ttk.Button(entry_row, text="Envoyer", command=self.send, width=10)
+        self.send_button = ttk.Button(entry_row, text="Send", command=self.send, width=10)
         self.send_button.grid(row=0, column=1, sticky="ns", padx=(8, 0))
         self.input.bind("<Return>", self._on_return)
         self.root.bind("<Escape>", lambda _e: self.stop())
         self.input.focus_set()
 
-        # Barre d'état
-        self.status_var = tk.StringVar(value="Connexion à Ollama…")
+        # Status bar
+        self.status_var = tk.StringVar(value="Connecting to Ollama…")
         ttk.Label(outer, textvariable=self.status_var, foreground=MUTED).grid(
             row=4, column=0, sticky="ew", pady=(6, 0)
         )
         ttk.Label(
-            outer, text="Entrée : envoyer · Maj+Entrée : nouvelle ligne · Échap : arrêter",
-            foreground=MUTED,
+            outer, text="Enter: send · Shift+Enter: new line · Esc: stop", foreground=MUTED,
         ).grid(row=5, column=0, sticky="ew")
 
     def _on_return(self, event):
-        if event.state & 0x0001:  # Maj enfoncée : saut de ligne normal
+        if event.state & 0x0001:  # Shift held: insert a normal newline
             return None
         self.send()
         return "break"
 
-    # ---------------------------------------------------------- zone de chat
+    # ------------------------------------------------------------ chat area
     def _append(self, text, *tags):
         at_bottom = self.chat.yview()[1] >= 0.99
         self.chat.configure(state="normal")
@@ -167,15 +166,15 @@ class ChatApp:
 
     def _set_busy(self, busy):
         if busy:
-            self.send_button.configure(text="Arrêter", command=self.stop)
+            self.send_button.configure(text="Stop", command=self.stop)
             self.model_box.configure(state="disabled")
         else:
-            self.send_button.configure(text="Envoyer", command=self.send)
+            self.send_button.configure(text="Send", command=self.send)
             self.model_box.configure(state="readonly")
 
-    # --------------------------------------------------------------- modèles
+    # --------------------------------------------------------------- models
     def refresh_models(self):
-        self.status_var.set("Recherche des modèles installés…")
+        self.status_var.set("Looking for installed models…")
 
         def work():
             try:
@@ -183,27 +182,27 @@ class ChatApp:
             except OllamaError as exc:
                 self.events.put((MODELS_EVENT, "error", str(exc)))
             except Exception as exc:
-                self.events.put((MODELS_EVENT, "error", "Erreur inattendue : {}".format(exc)))
+                self.events.put((MODELS_EVENT, "error", "Unexpected error: {}".format(exc)))
 
         threading.Thread(target=work, daemon=True).start()
 
     def _on_models(self, kind, payload):
         if kind == "error":
-            self.status_var.set(payload + "  Puis cliquez sur « Actualiser ».")
+            self.status_var.set(payload + "  Then click \"Refresh\".")
             return
         models = payload
         self.model_box.configure(values=models)
         if not models:
             self.model_var.set("")
             self.status_var.set(
-                "Aucun modèle installé. Dans un terminal, tapez par exemple : ollama pull qwen3:8b"
+                "No model installed. In a terminal, run for example: ollama pull qwen3:8b"
             )
             return
         if self.model_var.get() not in models:
             self.model_var.set(models[0])
-        self.status_var.set("Connecté à {} · {} modèle(s) installé(s)".format(self.client.host, len(models)))
+        self.status_var.set("Connected to {} · {} model(s) installed".format(self.client.host, len(models)))
 
-    # ----------------------------------------------------------------- envoi
+    # ----------------------------------------------------------------- send
     def send(self):
         if self.active_stream is not None:
             return
@@ -212,13 +211,13 @@ class ChatApp:
             return
         model = self.model_var.get().strip()
         if not model:
-            self.status_var.set("Choisissez d'abord un modèle (cliquez sur « Actualiser » si la liste est vide).")
+            self.status_var.set("Pick a model first (click \"Refresh\" if the list is empty).")
             return
 
         self.input.delete("1.0", "end")
         self.pending_text = text
         self.history.append({"role": "user", "content": text})
-        self._append("Vous\n", "role_user")
+        self._append("You\n", "role_user")
         self._append(text + "\n\n")
         self._append(model + "\n", "role_ai")
 
@@ -238,7 +237,7 @@ class ChatApp:
         self.active_stream = self.stream_counter
         self.cancel_event = threading.Event()
         self._set_busy(True)
-        self.status_var.set("Génération en cours…")
+        self.status_var.set("Generating…")
 
         threading.Thread(
             target=self._worker,
@@ -254,7 +253,7 @@ class ChatApp:
         except OllamaError as exc:
             self.events.put((stream_id, "error", str(exc)))
         except Exception as exc:
-            self.events.put((stream_id, "error", "Erreur inattendue : {}".format(exc)))
+            self.events.put((stream_id, "error", "Unexpected error: {}".format(exc)))
 
     def stop(self):
         if self.active_stream is None:
@@ -262,7 +261,7 @@ class ChatApp:
         self.cancel_event.set()
         self._finish(stopped=True)
 
-    # ------------------------------------------------- événements du worker
+    # ------------------------------------------------------ worker events
     def _poll(self):
         try:
             while True:
@@ -271,7 +270,7 @@ class ChatApp:
                     self._on_models(kind, payload)
                 elif stream_id == self.active_stream:
                     self._handle(kind, payload)
-                # sinon : événement d'une génération déjà arrêtée, on l'ignore
+                # otherwise: event from a generation that was already stopped, ignore it
         except queue.Empty:
             pass
         finally:
@@ -280,7 +279,7 @@ class ChatApp:
     def _handle(self, kind, payload):
         if kind == "thinking":
             if self.phase != "thinking":
-                self._append("[réflexion] ", "thinking")
+                self._append("[thinking] ", "thinking")
                 self.phase = "thinking"
             self._append(payload, "thinking")
         elif kind == "content":
@@ -304,8 +303,8 @@ class ChatApp:
         if reply:
             self.history.append({"role": "assistant", "content": reply})
         elif self.history and self.history[-1]["role"] == "user":
-            # Aucune réponse : on retire la question de l'historique et on la
-            # remet dans la zone de saisie pour pouvoir la renvoyer.
+            # No reply: remove the question from the history and put it back
+            # in the input box so it can be sent again.
             self.history.pop()
             if not self.input.get("1.0", "end-1c").strip():
                 self.input.insert("1.0", self.pending_text)
@@ -313,10 +312,10 @@ class ChatApp:
         self._append("\n")
         if error:
             self._append(error + "\n", "error")
-            self.status_var.set("Erreur.")
+            self.status_var.set("Error.")
         elif stopped:
-            self._append("[arrêté]\n", "meta")
-            self.status_var.set("Génération arrêtée.")
+            self._append("[stopped]\n", "meta")
+            self.status_var.set("Generation stopped.")
         else:
             stats = self.last_stats or {}
             speed = stats.get("tokens_per_second")
@@ -324,47 +323,47 @@ class ChatApp:
                 self._append(
                     "{} tokens · {:.1f} tokens/s\n".format(stats.get("tokens", 0), speed), "meta"
                 )
-            self.status_var.set("Prêt.")
+            self.status_var.set("Ready.")
         self._append("\n")
         self.input.focus_set()
 
-    # ------------------------------------------------------ actions du menu
+    # ------------------------------------------------------------- actions
     def new_conversation(self):
         if self.history and not messagebox.askyesno(
-            APP_TITLE, "Effacer la conversation en cours ?", parent=self.root
+            APP_TITLE, "Clear the current conversation?", parent=self.root
         ):
             return
         self.stop()
         self.history = []
         self._clear_chat()
-        self.status_var.set("Nouvelle conversation.")
+        self.status_var.set("New conversation.")
         self.input.focus_set()
 
     def save_conversation(self):
         if not self.history:
-            self.status_var.set("Rien à enregistrer pour l'instant.")
+            self.status_var.set("Nothing to save yet.")
             return
         default = "conversation-{}.md".format(datetime.now().strftime("%Y%m%d-%H%M"))
         path = filedialog.asksaveasfilename(
-            parent=self.root, title="Enregistrer la conversation", initialfile=default,
-            defaultextension=".md", filetypes=[("Markdown", "*.md"), ("Texte", "*.txt"), ("Tous", "*.*")],
+            parent=self.root, title="Save conversation", initialfile=default,
+            defaultextension=".md", filetypes=[("Markdown", "*.md"), ("Text", "*.txt"), ("All files", "*.*")],
         )
         if not path:
             return
-        lines = ["# Conversation avec {}".format(self.model_var.get() or "Ollama"), ""]
+        lines = ["# Conversation with {}".format(self.model_var.get() or "Ollama"), ""]
         system_prompt = self.system_var.get().strip()
         if system_prompt:
-            lines += ["**Consigne système :** {}".format(system_prompt), ""]
+            lines += ["**System prompt:** {}".format(system_prompt), ""]
         for message in self.history:
-            who = "Vous" if message["role"] == "user" else "Modèle"
+            who = "You" if message["role"] == "user" else "Model"
             lines += ["**{}**".format(who), "", message["content"], ""]
         try:
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write("\n".join(lines))
         except OSError as exc:
-            messagebox.showerror(APP_TITLE, "Impossible d'enregistrer : {}".format(exc), parent=self.root)
+            messagebox.showerror(APP_TITLE, "Could not save the file: {}".format(exc), parent=self.root)
             return
-        self.status_var.set("Conversation enregistrée : {}".format(path))
+        self.status_var.set("Conversation saved: {}".format(path))
 
     def _on_close(self):
         if self.cancel_event is not None:
@@ -374,7 +373,7 @@ class ChatApp:
 
 def main():
     if sys.platform == "win32":
-        try:  # texte net sur les écrans haute résolution
+        try:  # crisp text on high-DPI screens
             import ctypes
 
             ctypes.windll.shcore.SetProcessDpiAwareness(1)

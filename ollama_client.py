@@ -1,7 +1,7 @@
-"""Petit client pour l'API HTTP d'Ollama.
+"""A small client for the Ollama HTTP API.
 
-Utilise uniquement la bibliothèque standard de Python : rien à installer.
-Documentation de l'API : https://github.com/ollama/ollama/blob/main/docs/api.md
+Uses only the Python standard library: nothing to install.
+API reference: https://github.com/ollama/ollama/blob/main/docs/api.md
 """
 
 import json
@@ -14,11 +14,11 @@ DEFAULT_HOST = "http://localhost:11434"
 
 
 class OllamaError(Exception):
-    """Erreur lisible par l'utilisateur (Ollama injoignable, modèle absent...)."""
+    """A user-readable error (Ollama unreachable, model missing, ...)."""
 
 
 def normalize_host(host=None):
-    """Transforme une valeur comme OLLAMA_HOST en URL de base utilisable.
+    """Turn a value such as OLLAMA_HOST into a usable base URL.
 
     >>> normalize_host("127.0.0.1:11434")
     'http://127.0.0.1:11434'
@@ -30,7 +30,7 @@ def normalize_host(host=None):
         host = "http://" + host
     parts = urllib.parse.urlsplit(host)
     hostname = parts.hostname or "localhost"
-    if hostname == "0.0.0.0":  # adresse d'écoute, pas une adresse de connexion
+    if hostname == "0.0.0.0":  # a listen address, not an address to connect to
         hostname = "localhost"
     if ":" in hostname:  # IPv6
         hostname = "[" + hostname + "]"
@@ -44,7 +44,7 @@ class OllamaClient:
     def __init__(self, host=None, timeout=600):
         self.host = normalize_host(host or os.environ.get("OLLAMA_HOST"))
         self.timeout = timeout
-        # Pas de proxy : Ollama tourne le plus souvent sur la machine locale.
+        # No proxy: Ollama usually runs on the local machine.
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     # ------------------------------------------------------------------ HTTP
@@ -57,12 +57,12 @@ class OllamaClient:
         request = urllib.request.Request(self.host + path, data=data, headers=headers)
         try:
             return self._opener.open(request, timeout=timeout or self.timeout)
-        except urllib.error.HTTPError as exc:  # avant URLError : c'en est une sous-classe
+        except urllib.error.HTTPError as exc:  # before URLError: it is a subclass of it
             raise OllamaError(self._http_error_message(exc)) from None
         except (urllib.error.URLError, OSError):
             raise OllamaError(
-                "Impossible de joindre Ollama sur {}. Lancez l'application Ollama "
-                "(ou « ollama serve »).".format(self.host)
+                "Could not reach Ollama at {}. Start the Ollama app "
+                "(or run `ollama serve`).".format(self.host)
             ) from None
 
     @staticmethod
@@ -72,28 +72,28 @@ class OllamaClient:
             message = body.get("error")
         except (ValueError, AttributeError):
             message = None
-        return message or "Erreur HTTP {} renvoyée par Ollama.".format(exc.code)
+        return message or "HTTP error {} returned by Ollama.".format(exc.code)
 
     # ------------------------------------------------------------------- API
     def list_models(self):
-        """Retourne la liste triée des noms de modèles installés."""
+        """Return the sorted names of the installed models."""
         with self._open("/api/tags", timeout=5) as response:
             try:
                 data = json.loads(response.read().decode("utf-8"))
             except ValueError:
-                raise OllamaError("Réponse inattendue d'Ollama (JSON invalide).") from None
+                raise OllamaError("Unexpected response from Ollama (invalid JSON).") from None
         return sorted(m["name"] for m in data.get("models", []) if "name" in m)
 
     def chat_stream(self, model, messages, temperature=None, cancel=None):
-        """Envoie la conversation et produit la réponse au fil de l'eau.
+        """Send the conversation and yield the reply as it is generated.
 
-        Génère des tuples ``(type, contenu)`` :
-          - ``("content", "texte")``   morceau de la réponse ;
-          - ``("thinking", "texte")``  morceau de « réflexion » (modèles de raisonnement) ;
-          - ``("stats", {...})``       statistiques finales (tokens, vitesse).
+        Yields ``(kind, value)`` tuples:
+          - ``("content", "text")``   a chunk of the reply;
+          - ``("thinking", "text")``  a chunk of "thinking" (reasoning models);
+          - ``("stats", {...})``      final statistics (tokens, speed).
 
-        ``cancel`` est un ``threading.Event`` : dès qu'il est activé, la
-        connexion est fermée, ce qui demande à Ollama d'arrêter de générer.
+        ``cancel`` is a ``threading.Event``: as soon as it is set, the
+        connection is closed, which tells Ollama to stop generating.
         """
         payload = {"model": model, "messages": messages, "stream": True}
         if temperature is not None:
@@ -123,10 +123,10 @@ class OllamaClient:
                     return
         except OllamaError:
             raise
-        except Exception as exc:  # connexion coupée en cours de route, etc.
+        except Exception as exc:  # connection dropped mid-stream, etc.
             if cancel is not None and cancel.is_set():
                 return
-            raise OllamaError("Connexion interrompue : {}".format(exc)) from None
+            raise OllamaError("Connection interrupted: {}".format(exc)) from None
         finally:
             try:
                 response.close()

@@ -1,4 +1,4 @@
-"""Tests du client Ollama, contre un faux serveur local (aucun Ollama requis)."""
+"""Tests for the Ollama client, run against a fake local server (no Ollama needed)."""
 
 import json
 import os
@@ -39,23 +39,23 @@ class FakeOllama(BaseHTTPRequestHandler):
         self.server.last_request = request
         model = request["model"]
 
-        if model == "absent":
-            return self._json(404, {"error": "model 'absent' not found"})
+        if model == "missing":
+            return self._json(404, {"error": "model 'missing' not found"})
 
-        if model == "plante":
-            lines = [{"message": {"content": "Début"}}, {"error": "boom"}]
-        elif model == "raisonne":
+        if model == "crashes":
+            lines = [{"message": {"content": "Start"}}, {"error": "boom"}]
+        elif model == "reasoner":
             lines = [
                 {"message": {"thinking": "Hmm, "}},
-                {"message": {"thinking": "voyons."}},
-                {"message": {"content": "Réponse"}, "done": True, "eval_count": 10, "eval_duration": 5 * 10**9},
+                {"message": {"thinking": "let's see."}},
+                {"message": {"content": "Answer"}, "done": True, "eval_count": 10, "eval_duration": 5 * 10**9},
             ]
-        elif model == "lent":
-            lines = [{"message": {"content": "mot%d " % i}} for i in range(200)]
+        elif model == "slow":
+            lines = [{"message": {"content": "word%d " % i}} for i in range(200)]
         else:
             lines = [
-                {"message": {"content": "Bon"}},
-                {"message": {"content": "jour"}},
+                {"message": {"content": "Hel"}},
+                {"message": {"content": "lo"}},
                 {"message": {"content": ""}, "done": True, "eval_count": 20, "eval_duration": 10**9},
             ]
 
@@ -68,7 +68,7 @@ class FakeOllama(BaseHTTPRequestHandler):
                 data = (json.dumps(line) + "\n").encode()
                 self.wfile.write(b"%x\r\n" % len(data) + data + b"\r\n")
                 self.wfile.flush()
-                if model == "lent":
+                if model == "slow":
                     time.sleep(0.02)
             self.wfile.write(b"0\r\n\r\n")
         except (BrokenPipeError, ConnectionResetError):
@@ -89,14 +89,14 @@ class ClientTests(unittest.TestCase):
         cls.server.server_close()
 
     def chat(self, model, **kwargs):
-        return list(self.client.chat_stream(model, [{"role": "user", "content": "salut"}], **kwargs))
+        return list(self.client.chat_stream(model, [{"role": "user", "content": "hi"}], **kwargs))
 
     def test_normalize_host(self):
         self.assertEqual(normalize_host(None), "http://localhost:11434")
         self.assertEqual(normalize_host("127.0.0.1:11434"), "http://127.0.0.1:11434")
         self.assertEqual(normalize_host("0.0.0.0"), "http://localhost:11434")
-        self.assertEqual(normalize_host("http://serveur"), "http://serveur:11434")
-        self.assertEqual(normalize_host("https://exemple.org/"), "https://exemple.org:443")
+        self.assertEqual(normalize_host("http://server"), "http://server:11434")
+        self.assertEqual(normalize_host("https://example.org/"), "https://example.org:443")
 
     def test_list_models_sorted(self):
         self.assertEqual(self.client.list_models(), ["gemma3:4b", "qwen3:8b"])
@@ -104,7 +104,7 @@ class ClientTests(unittest.TestCase):
     def test_streaming_content_and_stats(self):
         events = self.chat("qwen3:8b")
         text = "".join(c for kind, c in events if kind == "content")
-        self.assertEqual(text, "Bonjour")
+        self.assertEqual(text, "Hello")
         stats = [c for kind, c in events if kind == "stats"][0]
         self.assertEqual(stats["tokens"], 20)
         self.assertAlmostEqual(stats["tokens_per_second"], 20.0)
@@ -114,26 +114,26 @@ class ClientTests(unittest.TestCase):
         request = self.server.last_request
         self.assertEqual(request["options"], {"temperature": 0.3})
         self.assertTrue(request["stream"])
-        self.assertEqual(request["messages"][0]["content"], "salut")
+        self.assertEqual(request["messages"][0]["content"], "hi")
 
     def test_thinking_is_separated(self):
-        events = self.chat("raisonne")
-        self.assertEqual("".join(c for k, c in events if k == "thinking"), "Hmm, voyons.")
-        self.assertEqual("".join(c for k, c in events if k == "content"), "Réponse")
+        events = self.chat("reasoner")
+        self.assertEqual("".join(c for k, c in events if k == "thinking"), "Hmm, let's see.")
+        self.assertEqual("".join(c for k, c in events if k == "content"), "Answer")
 
     def test_http_error_uses_ollama_message(self):
         with self.assertRaisesRegex(OllamaError, "not found"):
-            self.chat("absent")
+            self.chat("missing")
 
     def test_error_in_stream(self):
         with self.assertRaisesRegex(OllamaError, "boom"):
-            self.chat("plante")
+            self.chat("crashes")
 
     def test_cancel_stops_generation(self):
         cancel = threading.Event()
         received = []
         for kind, text in self.client.chat_stream(
-            "lent", [{"role": "user", "content": "x"}], cancel=cancel
+            "slow", [{"role": "user", "content": "x"}], cancel=cancel
         ):
             received.append(text)
             if len(received) == 3:
@@ -141,8 +141,8 @@ class ClientTests(unittest.TestCase):
         self.assertLess(len(received), 10)
 
     def test_unreachable_server(self):
-        client = OllamaClient("127.0.0.1:1")  # port fermé
-        with self.assertRaisesRegex(OllamaError, "Impossible de joindre Ollama"):
+        client = OllamaClient("127.0.0.1:1")  # closed port
+        with self.assertRaisesRegex(OllamaError, "Could not reach Ollama"):
             client.list_models()
         with self.assertRaises(OllamaError):
             list(client.chat_stream("x", []))

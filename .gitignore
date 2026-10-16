@@ -7,14 +7,14 @@ venv/
 build/
 dist/
 
-# Éditeurs
+# Editors
 .vscode/
 .idea/
 
-# Système
+# OS
 .DS_Store
 Thumbs.db
 
-# Conversations exportées depuis l'application (peuvent contenir des données privées)
+# Conversations exported from the app (may contain private data)
 conversation-*.md
 conversation-*.txt
